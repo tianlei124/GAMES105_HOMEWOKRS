@@ -38,15 +38,26 @@ class MetaData:
         
         # 合并路径，消去重复的节点
         while path1 and path2 and path2[-1] == path1[-1]:
-            path1.pop()
-            a = path2.pop()
+            a = path1.pop()
+            path2.pop()
             
-        path2.append(a)
+        path1.append(a)
         path = path2 + list(reversed(path1))
         path_name = [self.joint_name[i] for i in path]
         return path, path_name, path1, path2
-    
 
+    def get_joint_name(self):
+        return self.joint_name
+
+    def get_joint_parent(self):
+        return self.joint_parent
+
+    def get_joint_offset(self):
+        offset = [np.array([0.0, 0.0, 0.0])]
+        for i in range(1, len(self.joint_name)):
+            parent_index = self.joint_parent[i]
+            offset.append(self.joint_initial_position[i] - self.joint_initial_position[parent_index])
+        return offset
 
 
 def part1_simple(viewer, target_pos):

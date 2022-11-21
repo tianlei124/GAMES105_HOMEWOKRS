@@ -30,10 +30,29 @@ def part1_calculate_T_pose(bvh_file_path):
     Tips:
         joint_name顺序应该和bvh一致
     """
-    joint_name = None
-    joint_parent = None
-    joint_offset = None
-    return joint_name, joint_parent, joint_offset
+    joint_name = []
+    joint_parent = []
+    joint_offset = []
+    index = -1
+    stack = [index]
+    with open(bvh_file_path, "r") as bvh:
+        for des in bvh.readlines():
+            if "ROOT" in des or "JOINT" in des:
+                joint_parent.append(stack[-1])
+                joint_name.append(des.split(" ")[-1].strip())
+            if "End Site" in des:
+                joint_parent.append(stack[-1])
+                joint_name.append(joint_name[joint_parent[-1]] + "_end")
+            if "{" in des:
+                index += 1
+                stack.append(index)
+            if "OFFSET" in des:
+                joint_offset.append([float(x) for x in des.split("  ")[-3:]])
+            if "}" in des:
+                stack.pop()
+            if "MOTION" in des:
+                break
+    return joint_name, joint_parent, np.array(joint_offset)
 
 
 def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data, frame_id):
@@ -48,8 +67,26 @@ def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data
         1. joint_orientations的四元数顺序为(x, y, z, w)
         2. from_euler时注意使用大写的XYZ
     """
-    joint_positions = None
-    joint_orientations = None
+    current_motion = motion_data[frame_id]
+    joint_positions = [current_motion[:3] + joint_offset[0]]
+    joint_orientations = [R.from_euler(
+        "XYZ", current_motion[3:6], degrees=True).as_quat()]
+    j = 1
+    for i in range(1, len(joint_name)):
+        index = joint_parent[i]
+        joint_positions.append(
+            joint_positions[index] + R.from_quat(joint_orientations[index]).apply(joint_offset[i]))
+        if "_end" in joint_name[i]:
+            joint_orientations.append(
+                np.zeros(joint_orientations[index].shape))
+        else:
+            local_rotation = R.from_euler(
+                "XYZ", current_motion[3*(j+1):3*(j+2)], degrees=True).as_quat()
+            joint_orientations.append(
+                (R.from_quat(joint_orientations[index]) * R.from_quat(local_rotation)).as_quat())
+            j += 1
+    joint_positions = np.array(joint_positions)
+    joint_orientations = np.array(joint_orientations)
     return joint_positions, joint_orientations
 
 
@@ -63,5 +100,35 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
         两个bvh的joint name顺序可能不一致哦(
         as_euler时也需要大写的XYZ
     """
-    motion_data = None
+    joint_name_t, joint_parent_t, joint_offset_t = part1_calculate_T_pose(T_pose_bvh_path)
+    joint_name_a = []
+    Rl = R.from_euler("XYZ", [0, 0, -45.], degrees=True) # lShoulder Ri(TPose->APose)
+    Rr = R.from_euler("XYZ", [0, 0, 45.0], degrees=True) # rShoulder Ri(TPose->APose)
+    motion_data = []
+    joint_count, li, ri = 0, 0, 0
+    with open(A_pose_bvh_path, "r") as bvh:
+        valid_data = False
+        for line in bvh.readlines():
+            if not valid_data:
+                if "ROOT" in line or "JOINT" in line:
+                    joint_count += 1
+                    if "lShoulder" in line:
+                        li = joint_count
+                    if "rShoulder" in line:
+                        ri = joint_count
+                    joint_name_a.append(line.split()[-1].strip())
+                if "Frame Time:" in line:
+                    valid_data = True
+                continue
+            data = [float(x) for x in line.split()]
+            if len(data) > 0:
+                data[3 * li : 3 * (li + 1)] = (Rl * R.from_euler("XYZ", data[3 * li : 3 * (li + 1)], degrees=True)).as_euler("XYZ", degrees=True)
+                data[3 * ri : 3 * (ri + 1)] = (Rr * R.from_euler("XYZ", data[3 * ri : 3 * (ri + 1)], degrees=True)).as_euler("XYZ", degrees=True)
+                correct_data = data[:3]
+                for name in joint_name_t:
+                    if "_end" not in name:
+                        index = joint_name_a.index(name)
+                        correct_data.extend(data[(index + 1)*3:(index+2)*3])
+                motion_data.append(correct_data)
+    motion_data = np.array(motion_data)
     return motion_data
