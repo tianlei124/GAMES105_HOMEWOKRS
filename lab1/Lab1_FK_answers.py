@@ -77,8 +77,7 @@ def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data
         joint_positions.append(
             joint_positions[index] + R.from_quat(joint_orientations[index]).apply(joint_offset[i]))
         if "_end" in joint_name[i]:
-            joint_orientations.append(
-                np.zeros(joint_orientations[index].shape))
+            joint_orientations.append(joint_orientations[index])
         else:
             local_rotation = R.from_euler(
                 "XYZ", current_motion[3*(j+1):3*(j+2)], degrees=True).as_quat()

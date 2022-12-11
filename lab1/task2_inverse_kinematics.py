@@ -38,10 +38,10 @@ class MetaData:
         
         # 合并路径，消去重复的节点
         while path1 and path2 and path2[-1] == path1[-1]:
-            a = path1.pop()
-            path2.pop()
+            path1.pop()
+            a = path2.pop()
             
-        path1.append(a)
+        path2.append(a)
         path = path2 + list(reversed(path1))
         path_name = [self.joint_name[i] for i in path]
         return path, path_name, path1, path2
@@ -123,7 +123,7 @@ def part2(viewer, bvh_name):
     bvh_joint_name, bvh_joint_parent, bvh_offset = part1_calculate_T_pose(bvh_name)
     joint_name, _, joint_initial_position = viewer.get_meta_data()
     idx = [joint_name.index(name) for name in bvh_joint_name]
-    meta_data = MetaData(bvh_joint_name, bvh_joint_parent, joint_initial_position[idx], 'lShoulder', 'lWrist')
+    meta_data = MetaData(bvh_joint_name, bvh_joint_parent, joint_initial_position[idx], 'lShoulder', 'lWrist_end')
     class UpdateHandle:
         def __init__(self, meta_data, motion_data, joint_offset):
             self.meta_data = meta_data
@@ -181,7 +181,7 @@ def main():
     # part1
     # part1_simple(viewer, np.array([0.5, 0.75, 0.5]))
     # part1_hard(viewer, np.array([0.5, 0.5, 0.5]))
-    # part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
+    part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
     
     # part2
     # part2(viewer, 'data/walk60.bvh')

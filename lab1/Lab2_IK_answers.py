@@ -25,48 +25,45 @@ class InverseKinematics:
         self.joint_positions = joint_positions
         self.joint_orientations = joint_orientations
         self.target_pose = target_pose
-        print(self.path, self.path_name, self.path1, self.path2)
 
     def ccd_method(self):
         target_distance = modulus_length(
             self.joint_positions[self.path[-1]] - self.target_pose)
+        iterate_times = 500
         while target_distance > 0.01:
-            index = len(self.path) - 2
-            while index >= 0:
-                # print(f"Index: {self.path[index]}, target distance: {target_distance}")
-                current_position = self.joint_positions[self.path[index]]
+            for idx in range(len(self.path) - 2, -1, -1):
+                current_position = self.joint_positions[self.path[idx]]
                 target_direction = normalize(
                     self.target_pose - current_position)
                 current_direction = normalize(
                     self.joint_positions[self.path[-1]] - current_position)
                 rotation = R.from_quat(calculate_rotation(
                     current_direction, target_direction))
-                self.update_joint_pose(index, rotation)
-                # if index < (len(self.path) - len(self.path1) -1 ):
-                #     break
-                index -= 1
+                self.update_joint_pose(idx, rotation)
                 target_distance = modulus_length(
                     self.joint_positions[self.path[-1]] - self.target_pose)
-            # break
+            iterate_times -= 1
+            if iterate_times <= 0:
+                break
         return self.joint_positions, self.joint_orientations
 
     def update_joint_pose(self, index, rotation):
         divide = len(self.path) - len(self.path1)
-        if (index >= divide):
-            self.update_upper_pose(index - len(self.path2), rotation)
+        if (index >= divide or len(self.path2) <= 1):
+            self.update_upper_pose(index, rotation)
         else:
             self.updaet_lower_pose(index, rotation)
 
     def update_upper_pose(self, index, rotation):
         origin_orientatins = self.joint_orientations
         origin_rotation = R.from_matrix(np.transpose(R.from_quat(
-            origin_orientatins[self.path1[index-1]]).as_matrix())) * R.from_quat(origin_orientatins[self.path1[index]])
-        if self.path1[index] > 0:
-            self.joint_orientations[self.path1[index]] = (R.from_quat(
-                self.joint_orientations[self.path1[index-1]]) * origin_rotation * rotation).as_quat()
+            origin_orientatins[self.path[index-1]]).as_matrix())) * R.from_quat(origin_orientatins[self.path[index]])
+        if self.path[index] > 0:
+            self.joint_orientations[self.path[index]] = (R.from_quat(
+                self.joint_orientations[self.path[index-1]]) * origin_rotation * rotation).as_quat()
         else:
-            self.joint_orientations[self.path1[index]] = rotation.as_quat()
-        for j in range(self.path1[index+1], len(self.joint_orientations)):
+            self.joint_orientations[self.path[index]] = rotation.as_quat()
+        for j in range(self.path[index+1], len(self.joint_orientations)):
             self.joint_positions[j] = self.joint_positions[self.joint_parent[j]] + R.from_quat(
                 self.joint_orientations[self.joint_parent[j]]).apply(self.joint_offset[j])
             local_rotation = R.from_matrix(np.transpose(R.from_quat(
@@ -76,22 +73,18 @@ class InverseKinematics:
 
     def updaet_lower_pose(self, index, rotation):
         origin_orientatins = self.joint_orientations
-        origin_rotation = R.from_matrix(np.transpose(R.from_quat(
-            origin_orientatins[self.path2[index-1]]).as_matrix())) * R.from_quat(origin_orientatins[self.path2[index]])
-        if self.path2[index] > 0:
-            self.joint_orientations[self.path2[index]] = (R.from_quat(
-                self.joint_orientations[self.path2[index-1]]) * origin_rotation * rotation.inv()).as_quat()
-            for j in range(self.path2[index-1], len(self.joint_orientations)):
-                self.joint_positions[j] = self.joint_positions[self.joint_parent[j]] + R.from_quat(
-                    self.joint_orientations[self.joint_parent[j]]).apply(self.joint_offset[j])
-                local_rotation = R.from_matrix(np.transpose(R.from_quat(
-                    origin_orientatins[self.joint_parent[j]]).as_matrix())) * R.from_quat(origin_orientatins[j])
-                self.joint_orientations[j] = (R.from_quat(
-                    self.joint_orientations[self.joint_parent[j]]) * local_rotation).as_quat()
-        else:
-            self.joint_orientations[self.path2[index]] = rotation.as_quat()
-            self.joint_positions[self.path2[index]] = self.joint_positions[self.path2[index+1]] + R.from_quat(
-                    self.joint_orientations[self.path2[index+1]]).apply(self.joint_offset[index])
+        for j in range(index+1, len(self.path2)):
+            self.joint_orientations[self.path[j]] = (R.from_quat(self.joint_orientations[self.path[j]]) * rotation).as_quat()
+            self.joint_positions[self.path[j]] = self.joint_positions[self.path[j-1]] - R.from_quat(self.joint_orientations[self.path[j]]).apply(self.joint_offset[self.path[j-1]])
+        for j in range(1, len(self.joint_orientations)):
+            if j in self.path2:
+                continue
+            self.joint_positions[j] = self.joint_positions[self.joint_parent[j]] + R.from_quat(
+                self.joint_orientations[self.joint_parent[j]]).apply(self.joint_offset[j])
+            local_rotation = R.from_matrix(np.transpose(R.from_quat(
+                origin_orientatins[self.joint_parent[j]]).as_matrix())) * R.from_quat(origin_orientatins[j])
+            self.joint_orientations[j] = (R.from_quat(
+                self.joint_orientations[self.joint_parent[j]]) * local_rotation).as_quat()
 
 
 def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations, target_pose):
@@ -114,8 +107,8 @@ def part2_inverse_kinematics(meta_data, joint_positions, joint_orientations, rel
     """
     输入lWrist相对于RootJoint前进方向的xz偏移，以及目标高度，IK以外的部分与bvh一致
     """
-    
-    return joint_positions, joint_orientations
+
+    return InverseKinematics(meta_data, joint_positions, joint_orientations, np.array([relative_x, target_height, relative_z])).ccd_method()
 
 def bonus_inverse_kinematics(meta_data, joint_positions, joint_orientations, left_target_pose, right_target_pose):
     """

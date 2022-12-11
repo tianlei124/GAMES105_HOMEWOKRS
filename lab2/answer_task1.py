@@ -2,6 +2,27 @@ import numpy as np
 import copy
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+import math
+
+
+def lerp(x, y, w):
+    res = np.zeros(len(x))
+    for i in range(len(y)):
+        res[i] = x[i] * w + y[i] * (1 - w)
+    return res
+
+def modulus_length(v):
+    return np.sqrt(np.sum(v**2))
+
+def normalize(v):
+    return v / modulus_length(v)
+
+def calculate_rotation(v1, v2):
+    u = normalize(np.cross(v1, v2))
+    theta = math.acos(np.dot(v1, v2)/(modulus_length(v1)*modulus_length(v2)))
+    return R.from_rotvec(u*theta).as_quat()
+
+
 # ------------- lab1里的代码 -------------#
 def load_meta_data(bvh_path):
     with open(bvh_path, 'r') as f:
@@ -207,9 +228,14 @@ class BVHMotion():
         '''
         Ry = np.zeros_like(rotation)
         Rxz = np.zeros_like(rotation)
-        # TODO: 你的代码
-        
-        return Ry, Rxz
+
+        Rorigin = R.from_quat(rotation)
+        Rskim = calculate_rotation(
+            Rorigin.as_matrix()[:, 1], np.array([0, 1, 0]))
+        Ry = R.from_quat(Rskim) * Rorigin
+        Rxz = Ry.inv() * Rorigin
+
+        return Ry.as_quat(), Rxz.as_quat()
     
     # part 1
     def translation_and_rotation(self, frame_num, target_translation_xz, target_facing_direction_xz):
@@ -218,7 +244,7 @@ class BVHMotion():
         使第frame_num帧的根节点平移为target_translation_xz, 水平面朝向为target_facing_direction_xz
         frame_num: int
         target_translation_xz: (2,)的ndarray
-        target_faceing_direction_xz: (2,)的ndarray，表示水平朝向。你可以理解为原本的z轴被旋转到这个方向。
+        target_facing_direction_xz: (2,)的ndarray，表示水平朝向。你可以理解为原本的z轴被旋转到这个方向。
         Tips:
             主要是调整root节点的joint_position和joint_rotation
             frame_num可能是负数，遵循python的索引规则
@@ -228,10 +254,21 @@ class BVHMotion():
         
         res = self.raw_copy() # 拷贝一份，不要修改原始数据
         
+        origin_Z = normalize(np.array(R.from_quat(res.joint_rotation[frame_num, 0]).as_matrix()[:, 2]))
+        target_Z = normalize(np.array([target_facing_direction_xz[0], 0, target_facing_direction_xz[1]]))
+        relative_R = calculate_rotation(origin_Z, target_Z)
+        for idx in range(len(res.joint_rotation[:, 0])):
+            Ry, Rxz = self.decompose_rotation_with_yaxis(res.joint_rotation[idx, 0])
+            Ry = R.from_quat(Ry) * R.from_quat(relative_R)
+            res.joint_rotation[idx, 0] = (Ry * R.from_quat(Rxz)).as_quat()
+            if idx > 0:
+                relative_P = self.joint_position[idx, 0] - self.joint_position[idx - 1, 0]
+                res.joint_position[idx, 0, :] = res.joint_position[idx - 1, 0] + R.from_quat(relative_R).apply(relative_P)
+
         # 比如说，你可以这样调整第frame_num帧的根节点平移
         offset = target_translation_xz - res.joint_position[frame_num, 0, [0,2]]
         res.joint_position[:, 0, [0,2]] += offset
-        # TODO: 你的代码
+
         return res
 
 # part2
@@ -249,8 +286,15 @@ def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
     res.joint_rotation = np.zeros((len(alpha), res.joint_rotation.shape[1], res.joint_rotation.shape[2]))
     res.joint_rotation[...,3] = 1.0
 
-    # TODO: 你的代码
-    
+    n1, n2, n3 = len(bvh_motion1.joint_position), len(bvh_motion2.joint_position), len(alpha)
+    for i in range(len(alpha)):
+        w = alpha[i]
+        ratio = i / len(alpha)
+        j = int(ratio * n1)
+        k = int(ratio * n2)
+        for idx in range(len(res.joint_position[i])):
+            res.joint_position[i, idx, :] = lerp(bvh_motion1.joint_position[j, idx, :], bvh_motion2.joint_position[k, idx, :], w)
+
     return res
 
 # part3
