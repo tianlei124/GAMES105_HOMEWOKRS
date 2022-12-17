@@ -254,7 +254,8 @@ class BVHMotion():
         
         res = self.raw_copy() # 拷贝一份，不要修改原始数据
         
-        origin_Z = normalize(np.array(R.from_quat(res.joint_rotation[frame_num, 0]).as_matrix()[:, 2]))
+        origin_Z = R.from_quat(res.joint_rotation[frame_num, 0]).as_matrix()[:, 2]
+        origin_Z = normalize(np.array([origin_Z[0], 0, origin_Z[2]]))
         target_Z = normalize(np.array([target_facing_direction_xz[0], 0, target_facing_direction_xz[1]]))
         relative_R = calculate_rotation(origin_Z, target_Z)
         for idx in range(len(res.joint_rotation[:, 0])):
@@ -294,6 +295,7 @@ def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
         k = int(ratio * n2)
         for idx in range(len(res.joint_position[i])):
             res.joint_position[i, idx, :] = lerp(bvh_motion1.joint_position[j, idx, :], bvh_motion2.joint_position[k, idx, :], w)
+            res.joint_rotation[i, idx, :] = Slerp([0, 1], R.from_quat([bvh_motion1.joint_rotation[j, idx], bvh_motion2.joint_rotation[k, idx]]))(w).as_quat()
 
     return res
 
